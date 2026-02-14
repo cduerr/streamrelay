@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/streamrelay/streamrelay/internal/auth"
@@ -31,9 +28,32 @@ type Server struct {
 func New(cfg *config.Config, h *hub.Hub, a *auth.Authenticator, b *broker.RedisBroker, logger *slog.Logger) *Server {
 	mux := http.NewServeMux()
 
-	// Health check — no auth required.
+	// Health check — minimal, for load balancers. No auth required.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Stats endpoint — detailed, requires auth. If stats_identity is
+	// configured, only that identity can access this endpoint.
+	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
+		rawToken := transport.ExtractToken(r)
+		if rawToken == "" {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		claims, err := a.Validate(r.Context(), rawToken)
+		if err != nil {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		if cfg.Server.StatsIdentity != "" && claims.Identity != cfg.Server.StatsIdentity {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+
 		total, identities := h.Stats()
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":      "ok",
 			"connections": total,
@@ -56,12 +76,10 @@ func New(cfg *config.Config, h *hub.Hub, a *auth.Authenticator, b *broker.RedisB
 		logger.Info("WebSocket transport enabled", "path", "/ws")
 	}
 
-	// Build middleware chain.
-	limiter := newIPRateLimiter(cfg.Server.RateLimitPerSecond)
+	// Middleware chain: CORS → logging → routes.
+	// Rate limiting is expected to be handled by the load balancer.
 	handler := corsMiddleware(cfg,
-		rateLimitMiddleware(limiter, logger,
-			loggingMiddleware(logger, mux),
-		),
+		loggingMiddleware(logger, mux),
 	)
 
 	return &Server{
@@ -71,11 +89,12 @@ func New(cfg *config.Config, h *hub.Hub, a *auth.Authenticator, b *broker.RedisB
 		broker: b,
 		logger: logger,
 		http: &http.Server{
-			Addr:         cfg.Addr(),
-			Handler:      handler,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 0, // SSE/WebSocket connections are long-lived.
-			IdleTimeout:  120 * time.Second,
+			Addr:              cfg.Addr(),
+			Handler:           handler,
+			ReadTimeout:       5 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+			WriteTimeout:      0, // SSE/WebSocket connections are long-lived.
+			IdleTimeout:       120 * time.Second,
 		},
 	}
 }
@@ -94,112 +113,21 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
-// --- Rate Limiter ---
-
-// ipRateLimiter tracks connection attempts per IP using a sliding window.
-type ipRateLimiter struct {
-	mu       sync.Mutex
-	requests map[string][]time.Time
-	limit    int
-}
-
-func newIPRateLimiter(perSecond int) *ipRateLimiter {
-	return &ipRateLimiter{
-		requests: make(map[string][]time.Time),
-		limit:    perSecond,
-	}
-}
-
-// Allow checks whether an IP is within its rate limit.
-func (rl *ipRateLimiter) Allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	window := now.Add(-1 * time.Second)
-
-	// Remove expired entries.
-	timestamps := rl.requests[ip]
-	valid := timestamps[:0]
-	for _, t := range timestamps {
-		if t.After(window) {
-			valid = append(valid, t)
-		}
-	}
-
-	if len(valid) >= rl.limit {
-		rl.requests[ip] = valid
-		return false
-	}
-
-	rl.requests[ip] = append(valid, now)
-	return true
-}
-
-// Cleanup removes stale IPs. Call periodically.
-func (rl *ipRateLimiter) Cleanup() {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	window := time.Now().Add(-1 * time.Second)
-	for ip, timestamps := range rl.requests {
-		valid := timestamps[:0]
-		for _, t := range timestamps {
-			if t.After(window) {
-				valid = append(valid, t)
-			}
-		}
-		if len(valid) == 0 {
-			delete(rl.requests, ip)
-		} else {
-			rl.requests[ip] = valid
-		}
-	}
-}
-
 // --- Middleware ---
 
-// rateLimitMiddleware rejects requests that exceed the per-IP rate limit.
-// Only applies to connection endpoints (/events, /ws), not health checks.
-func rateLimitMiddleware(limiter *ipRateLimiter, logger *slog.Logger, next http.Handler) http.Handler {
-	// Periodic cleanup of stale entries.
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			limiter.Cleanup()
-		}
-	}()
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only rate-limit connection endpoints.
-		if r.URL.Path != "/events" && r.URL.Path != "/ws" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		ip := extractIP(r)
-		if !limiter.Allow(ip) {
-			logger.Warn("rate limit exceeded", "ip", ip, "path", r.URL.Path)
-			http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 // corsMiddleware adds CORS headers based on configured allowed origins.
+// Sets Vary: Origin unconditionally so caches don't conflate responses
+// for different origins.
 func corsMiddleware(cfg *config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
+		w.Header().Set("Vary", "Origin")
 
+		origin := r.Header.Get("Origin")
 		if origin != "" && cfg.IsOriginAllowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Refresh-Token")
 			w.Header().Set("Access-Control-Max-Age", "86400")
-			w.Header().Set("Vary", "Origin")
 		}
 
 		if r.Method == http.MethodOptions {
@@ -216,7 +144,6 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Skip detailed logging for SSE/WS connections (logged elsewhere).
 		if r.URL.Path == "/events" || r.URL.Path == "/ws" {
 			next.ServeHTTP(w, r)
 			return
@@ -231,23 +158,4 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 			"duration", time.Since(start),
 		)
 	})
-}
-
-// extractIP gets the client IP, respecting X-Forwarded-For behind a proxy.
-func extractIP(r *http.Request) string {
-	// Check X-Forwarded-For first (trusted proxy scenario).
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP (client IP).
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-
-	// Fall back to RemoteAddr.
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
 }

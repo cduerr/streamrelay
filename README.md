@@ -65,7 +65,7 @@ review before using in production.
 git clone https://github.com/streamrelay/streamrelay.git
 cd streamrelay
 cp config.example.yaml config.yaml
-# Edit config.yaml — at minimum, set auth.jwt_secret
+# Edit config.yaml — at minimum, set auth.jwt_secret (32+ characters)
 ```
 
 ### 2. Run with Docker Compose
@@ -168,14 +168,19 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `max_connections_per_identity` | `0` | Max connections per user (0 = unlimited) |
 | `max_message_size_bytes` | `4096` | Max inbound WebSocket message size |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout |
+| `allowed_origins` | `[]` | CORS allowed origins. Empty rejects all cross-origin requests. Use `["*"]` to allow all (not recommended). |
+| `stats_identity` | — | If set, only this identity can access `/stats`. When empty, any authenticated user can access it. |
 
 ### `auth`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `jwt_secret` | — | HMAC signing secret (set this OR `jwt_public_key`) |
+| `jwt_secret` | — | HMAC signing secret, minimum 32 characters (set this OR `jwt_public_key`) |
 | `jwt_public_key` | — | Path to PEM public key for RSA/ECDSA |
-| `identity_claim` | `sub` | JWT claim used as the user identity |
+| `identity_claim` | `sub` | JWT claim used as the user identity. Must contain only alphanumeric, `.`, `-`, `_`. |
+| `expected_issuer` | — | If set, reject tokens with a different `iss` claim. Prevents cross-service token reuse. |
+| `expected_audience` | — | If set, reject tokens with a different `aud` claim. |
+| `require_expiry` | `true` | Reject tokens without an `exp` (expiration) claim. |
 
 **Environment overrides:**
 - `STREAMRELAY_AUTH_JWT_SECRET` → `auth.jwt_secret`
@@ -208,9 +213,7 @@ Automatic token refresh. StreamRelay calls this endpoint proactively before toke
 | `new_token_field` | `access_token` | Response JSON field containing the new JWT |
 | `interval_seconds` | `1800` | Refresh this many seconds before expiry |
 
-The client must provide a refresh token on connect via:
-- Query parameter: `?refresh_token=...`
-- Header: `X-Refresh-Token: ...`
+The client must provide a refresh token on connect via the `X-Refresh-Token` header.
 
 ### `redis`
 
@@ -262,13 +265,22 @@ WebSocket connection. Requires JWT authentication.
 
 **Auth:** `?token=<token>` query param (headers not supported for WebSocket upgrade in browsers).
 
-**Inbound messages** (client → server) are published to Redis at `{inbound_prefix}:{identity}`.
+**Inbound messages** (client → server) are published to Redis at `{inbound_prefix}:{identity}`. Consumers of inbound channels must treat all data as untrusted user input.
 
 **Outbound messages** (server → client) are JSON payloads from Redis (SSE framing is stripped for WebSocket clients).
 
 ### `GET /health`
 
-Health check. No authentication required.
+Minimal health check for load balancers. No authentication required.
+
+**Response:**
+```json
+{"status":"ok"}
+```
+
+### `GET /stats`
+
+Detailed connection statistics. Requires JWT authentication. If `stats_identity` is configured, only that identity can access this endpoint.
 
 **Response:**
 ```json
@@ -283,19 +295,30 @@ Health check. No authentication required.
 ## Security
 
 - **Tokens are validated locally** — no network calls required for basic auth. The JWT secret/public key is the only shared state between StreamRelay and your auth system.
+- **Expiry is required by default** — tokens without an `exp` claim are rejected. Prevents immortal tokens from circulating.
 - **Users cannot subscribe to other users' channels.** The channel is derived from the JWT identity claim, never from user input.
+- **Identity claims are validated** — only alphanumeric characters, dots, hyphens, and underscores are accepted. This prevents Redis channel injection.
+- **Issuer/audience validation** — optionally reject tokens not minted for this service, preventing cross-service token reuse.
+- **SSRF protection** — remote verify/refresh endpoint URLs are validated at startup, blocking private, link-local, and loopback addresses.
 - **WebSocket inbound messages are published to a separate channel prefix** (`inbound:`) so they cannot interfere with outbound events.
 - **Connection limits** prevent a single user from exhausting server resources.
-- **CORS headers** are set permissively by default. Lock down via a reverse proxy in production.
+- **CORS is locked down by default** — no origins are allowed unless explicitly configured.
+
+### Token-in-URL Considerations
+
+The SSE `EventSource` API does not support custom headers, so `?token=` query params are unavoidable for SSE. Be aware that URL query parameters may appear in load balancer access logs, browser history, and Referer headers. For production: configure your reverse proxy to strip or redact the `token` query parameter from access logs, use short-lived tokens, and use the refresh mechanism to limit exposure. Refresh tokens are accepted via the `X-Refresh-Token` header only, never via query parameter.
 
 ### Production Recommendations
 
-- Run behind a reverse proxy (nginx, Caddy, Traefik) that handles TLS.
-- Set `jwt_secret` via `STREAMRELAY_AUTH_JWT_SECRET` environment variable, not in the config file.
+- **TLS is required.** Run behind a reverse proxy (nginx, Caddy, Traefik) that handles TLS termination. Configure rate limiting at the load balancer level.
+- Set `jwt_secret` via `STREAMRELAY_AUTH_JWT_SECRET` environment variable, not in the config file. Minimum 32 characters.
+- Configure `expected_issuer` and/or `expected_audience` if the signing key is shared with other services.
+- Configure `allowed_origins` to your frontend domain(s).
 - Configure `max_connections_per_identity` (e.g., 5) to prevent abuse.
 - Use `logging.format: json` for structured log aggregation.
-- Monitor the `/health` endpoint.
+- Monitor the `/health` endpoint for load balancer checks. Use `/stats` (authenticated) for operational monitoring.
 - Set appropriate file descriptor limits on the host (`ulimit -n 65536`).
+- Strip or redact `token` query parameters from reverse proxy access logs.
 
 ## Building from Source
 

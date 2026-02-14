@@ -3,9 +3,21 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+)
+
+// identityPattern defines allowed characters in identity claims.
+// Alphanumeric, hyphens, underscores, periods. Rejects Redis-special
+// characters (: * ? [ ]) and whitespace/control characters.
+var identityPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+const (
+	// MinSecretLength is the minimum acceptable length for HMAC secrets.
+	// HMAC-SHA256 should use at least 32 bytes of entropy.
+	MinSecretLength = 32
 )
 
 type Config struct {
@@ -17,23 +29,26 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host                     string   `yaml:"host"`
-	Port                     int      `yaml:"port"`
-	HeartbeatSeconds         int      `yaml:"heartbeat_seconds"`
-	MaxConnectionsTotal      int      `yaml:"max_connections_total"`
-	MaxConnectionsPerIdent   int      `yaml:"max_connections_per_identity"`
-	MaxMessageSizeBytes      int      `yaml:"max_message_size_bytes"`
-	ShutdownTimeoutSeconds   int      `yaml:"shutdown_timeout_seconds"`
-	AllowedOrigins           []string `yaml:"allowed_origins"`
-	RateLimitPerSecond       int      `yaml:"rate_limit_per_second"`
+	Host                   string   `yaml:"host"`
+	Port                   int      `yaml:"port"`
+	HeartbeatSeconds       int      `yaml:"heartbeat_seconds"`
+	MaxConnectionsTotal    int      `yaml:"max_connections_total"`
+	MaxConnectionsPerIdent int      `yaml:"max_connections_per_identity"`
+	MaxMessageSizeBytes    int      `yaml:"max_message_size_bytes"`
+	ShutdownTimeoutSeconds int      `yaml:"shutdown_timeout_seconds"`
+	AllowedOrigins         []string `yaml:"allowed_origins"`
+	StatsIdentity          string   `yaml:"stats_identity"`
 }
 
 type AuthConfig struct {
-	JWTSecret     string        `yaml:"jwt_secret"`
-	JWTPublicKey  string        `yaml:"jwt_public_key"`
-	IdentityClaim string        `yaml:"identity_claim"`
-	Verify        *VerifyConfig `yaml:"verify,omitempty"`
-	Refresh       *RefreshConfig `yaml:"refresh,omitempty"`
+	JWTSecret        string         `yaml:"jwt_secret"`
+	JWTPublicKey     string         `yaml:"jwt_public_key"`
+	IdentityClaim    string         `yaml:"identity_claim"`
+	ExpectedIssuer   string         `yaml:"expected_issuer"`
+	ExpectedAudience string         `yaml:"expected_audience"`
+	RequireExpiry    *bool          `yaml:"require_expiry"`
+	Verify           *VerifyConfig  `yaml:"verify,omitempty"`
+	Refresh          *RefreshConfig `yaml:"refresh,omitempty"`
 }
 
 type VerifyConfig struct {
@@ -74,19 +89,16 @@ type LoggingConfig struct {
 }
 
 // Load reads configuration from a YAML file path.
-// Environment variables can override any config value using the
-// STREAMRELAY_ prefix (e.g., STREAMRELAY_AUTH_JWT_SECRET).
+// Secrets should be injected via environment variable overrides, not
+// embedded in the config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
 
-	// Expand environment variable references in the YAML.
-	expanded := os.ExpandEnv(string(data))
-
 	cfg := &Config{}
-	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
@@ -116,11 +128,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.ShutdownTimeoutSeconds == 0 {
 		cfg.Server.ShutdownTimeoutSeconds = 10
 	}
-	if cfg.Server.RateLimitPerSecond == 0 {
-		cfg.Server.RateLimitPerSecond = 20
-	}
 	if cfg.Auth.IdentityClaim == "" {
 		cfg.Auth.IdentityClaim = "sub"
+	}
+	if cfg.Auth.RequireExpiry == nil {
+		t := true
+		cfg.Auth.RequireExpiry = &t
 	}
 	if cfg.Redis.URL == "" {
 		cfg.Redis.URL = "redis://localhost:6379"
@@ -178,7 +191,7 @@ func applyDefaults(cfg *Config) {
 }
 
 // applyEnvOverrides reads specific environment variables that take
-// precedence over config file values. Useful for secrets in production.
+// precedence over config file values. Use for secrets in production.
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("STREAMRELAY_AUTH_JWT_SECRET"); v != "" {
 		cfg.Auth.JWTSecret = v
@@ -200,6 +213,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Auth.JWTSecret != "" && cfg.Auth.JWTPublicKey != "" {
 		return fmt.Errorf("auth: set jwt_secret OR jwt_public_key, not both")
+	}
+	if cfg.Auth.JWTSecret != "" && len(cfg.Auth.JWTSecret) < MinSecretLength {
+		return fmt.Errorf("auth: jwt_secret must be at least %d characters", MinSecretLength)
 	}
 	if !cfg.Transports.SSE && !cfg.Transports.WebSocket {
 		return fmt.Errorf("transports: at least one of sse or websocket must be enabled")
@@ -276,4 +292,20 @@ func (c *Config) IsPlaceholderSecret() bool {
 		}
 	}
 	return false
+}
+
+// ValidateIdentity checks that an identity string is safe for use as a
+// Redis channel component. Rejects empty strings, strings with
+// Redis-special characters (: * ? [), and control characters.
+func ValidateIdentity(identity string) error {
+	if identity == "" {
+		return fmt.Errorf("identity is empty")
+	}
+	if len(identity) > 128 {
+		return fmt.Errorf("identity exceeds 128 characters")
+	}
+	if !identityPattern.MatchString(identity) {
+		return fmt.Errorf("identity contains invalid characters (allowed: alphanumeric, . _ -)")
+	}
+	return nil
 }

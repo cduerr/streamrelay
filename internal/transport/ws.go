@@ -38,7 +38,7 @@ func NewWSHandler(h *hub.Hub, a *auth.Authenticator, b *broker.RedisBroker, cfg 
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
 				if origin == "" {
-					return true // Non-browser clients (e.g., CLI tools).
+					return true // Non-browser clients.
 				}
 				return cfg.IsOriginAllowed(origin)
 			},
@@ -49,7 +49,7 @@ func NewWSHandler(h *hub.Hub, a *auth.Authenticator, b *broker.RedisBroker, cfg 
 // ServeHTTP handles an incoming WebSocket upgrade request.
 func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Authenticate before upgrading.
-	rawToken := extractToken(r)
+	rawToken := ExtractToken(r)
 	if rawToken == "" {
 		http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
 		return
@@ -62,11 +62,8 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract optional refresh token.
-	refreshToken := r.URL.Query().Get("refresh_token")
-	if refreshToken == "" {
-		refreshToken = r.Header.Get("X-Refresh-Token")
-	}
+	// Extract refresh token from header only (never query param for security).
+	refreshToken := r.Header.Get("X-Refresh-Token")
 
 	// Upgrade to WebSocket.
 	conn, err := ws.upgrader.Upgrade(w, r, nil)
@@ -82,7 +79,7 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	client := hub.NewClient(claims.Identity, "websocket", claims, refreshToken)
 	if err := ws.hub.Register(client); err != nil {
 		ws.logger.Warn("WebSocket registration denied", "identity", claims.Identity, "error", err)
-		conn.WriteJSON(map[string]string{"error": err.Error()})
+		conn.WriteJSON(map[string]string{"error": "too many connections"})
 		return
 	}
 	defer ws.hub.Unregister(client)
@@ -102,10 +99,10 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Read pump: client → Redis (inbound messages).
+	// Read pump: client -> Redis (inbound messages).
 	go ws.readPump(ctx, cancel, conn, client)
 
-	// Write pump: hub → client (outbound messages).
+	// Write pump: hub -> client (outbound messages).
 	ws.writePump(ctx, conn, client)
 }
 
@@ -179,8 +176,7 @@ func (ws *WSHandler) writePump(ctx context.Context, conn *websocket.Conn, client
 
 			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
-			// For WebSocket, send as a text message (not SSE formatted).
-			// Strip SSE framing if present (the hub sends SSE-formatted data).
+			// For WebSocket, send as text (not SSE formatted).
 			payload := stripSSEFraming(msg)
 			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				ws.logger.Debug("WebSocket write failed", "client_id", client.ID, "error", err)
@@ -200,8 +196,6 @@ func (ws *WSHandler) writePump(ctx context.Context, conn *websocket.Conn, client
 // so WebSocket clients get clean JSON payloads.
 func stripSSEFraming(msg []byte) []byte {
 	s := string(msg)
-
-	// Quick check: if it doesn't look like SSE, return as-is.
 	if len(s) < 5 {
 		return msg
 	}

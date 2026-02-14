@@ -27,7 +27,7 @@ func NewSSEHandler(h *hub.Hub, a *auth.Authenticator, logger *slog.Logger) *SSEH
 // ServeHTTP handles an incoming SSE connection request.
 func (s *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Authenticate.
-	rawToken := extractToken(r)
+	rawToken := ExtractToken(r)
 	if rawToken == "" {
 		http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
 		return
@@ -40,11 +40,8 @@ func (s *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract optional refresh token.
-	refreshToken := r.URL.Query().Get("refresh_token")
-	if refreshToken == "" {
-		refreshToken = r.Header.Get("X-Refresh-Token")
-	}
+	// Extract refresh token from header only (never query param).
+	refreshToken := r.Header.Get("X-Refresh-Token")
 
 	// Check that response supports flushing.
 	flusher, ok := w.(http.Flusher)
@@ -57,7 +54,7 @@ func (s *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	client := hub.NewClient(claims.Identity, "sse", claims, refreshToken)
 	if err := s.hub.Register(client); err != nil {
 		s.logger.Warn("SSE registration denied", "identity", claims.Identity, "error", err)
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusTooManyRequests)
+		http.Error(w, `{"error":"too many connections"}`, http.StatusTooManyRequests)
 		return
 	}
 	defer s.hub.Unregister(client)
@@ -83,18 +80,15 @@ func (s *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
-			// Client disconnected.
 			s.logger.Debug("SSE client disconnected", "client_id", client.ID)
 			return
 
 		case <-client.Done():
-			// Server closed the client (e.g., token expiry).
 			s.logger.Debug("SSE client closed by server", "client_id", client.ID)
 			return
 
 		case msg, ok := <-client.Send:
 			if !ok {
-				// Channel closed.
 				return
 			}
 			if _, err := w.Write(msg); err != nil {

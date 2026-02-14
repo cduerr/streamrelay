@@ -14,13 +14,18 @@ import (
 type Client struct {
 	ID          string
 	Identity    string
-	Claims      *auth.Claims
 	RefreshTok  string
 	Transport   string // "sse" or "websocket"
 	Send        chan []byte
 	ConnectedAt time.Time
 	done        chan struct{}
 	closeOnce   sync.Once
+
+	// claimsMu protects Claims from concurrent read/write between
+	// the heartbeat goroutine (which refreshes tokens) and transport
+	// goroutines (which may read claims).
+	claimsMu sync.RWMutex
+	claims   *auth.Claims
 }
 
 // NewClient creates a new Client with a buffered send channel.
@@ -28,13 +33,27 @@ func NewClient(identity, transport string, claims *auth.Claims, refreshToken str
 	return &Client{
 		ID:          fmt.Sprintf("%s-%s-%d", identity, transport, time.Now().UnixNano()),
 		Identity:    identity,
-		Claims:      claims,
+		claims:      claims,
 		RefreshTok:  refreshToken,
 		Transport:   transport,
 		Send:        make(chan []byte, 64),
 		ConnectedAt: time.Now(),
 		done:        make(chan struct{}),
 	}
+}
+
+// GetClaims returns the client's current claims (thread-safe).
+func (c *Client) GetClaims() *auth.Claims {
+	c.claimsMu.RLock()
+	defer c.claimsMu.RUnlock()
+	return c.claims
+}
+
+// SetClaims updates the client's claims (thread-safe).
+func (c *Client) SetClaims(claims *auth.Claims) {
+	c.claimsMu.Lock()
+	defer c.claimsMu.Unlock()
+	c.claims = claims
 }
 
 // Done returns a channel that is closed when the client is closed.
@@ -54,11 +73,11 @@ func (c *Client) Close() {
 // Hub manages all active client connections, grouped by identity.
 // It handles registration, unregistration, fan-out, and per-identity limits.
 type Hub struct {
-	mu                    sync.RWMutex
-	clients               map[string]map[*Client]struct{} // identity → set of clients
-	maxPerIdentity        int
-	maxTotal              int
-	totalConnections      int
+	mu               sync.RWMutex
+	clients          map[string]map[*Client]struct{} // identity -> set of clients
+	maxPerIdentity   int
+	maxTotal         int
+	totalConnections int
 
 	logger *slog.Logger
 }
@@ -245,7 +264,8 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 
 			var expired []*Client
 			for _, c := range allClients {
-				if authenticator.IsExpired(c.Claims) {
+				claims := c.GetClaims()
+				if authenticator.IsExpired(claims) {
 					if authenticator.RefreshEnabled() && c.RefreshTok != "" {
 						newToken, err := authenticator.Refresh(ctx, c.RefreshTok)
 						if err != nil {
@@ -258,7 +278,6 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 							continue
 						}
 
-						// Re-validate the new token.
 						newClaims, err := authenticator.Validate(ctx, newToken)
 						if err != nil {
 							h.logger.Warn("refreshed token invalid, expiring client",
@@ -269,7 +288,7 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 							continue
 						}
 
-						c.Claims = newClaims
+						c.SetClaims(newClaims)
 						h.logger.Debug("token refreshed",
 							"client_id", c.ID,
 							"identity", c.Identity,
@@ -298,7 +317,6 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 				case c.Send <- expiredMsg:
 				default:
 				}
-				// Brief pause to let the message drain before closing.
 				go func(client *Client) {
 					time.Sleep(100 * time.Millisecond)
 					h.Unregister(client)

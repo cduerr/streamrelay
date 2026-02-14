@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,13 +29,13 @@ import (
 var (
 	ErrInvalidToken  = errors.New("invalid or expired token")
 	ErrNoIdentity    = errors.New("token missing identity claim")
+	ErrBadIdentity   = errors.New("identity claim contains invalid characters")
 	ErrVerifyFailed  = errors.New("remote token verification failed")
 	ErrRefreshFailed = errors.New("token refresh failed")
 )
 
 const (
 	// Maximum number of entries in the verification cache.
-	// Prevents OOM from an attacker flooding unique tokens.
 	maxCacheEntries = 10000
 )
 
@@ -87,20 +88,31 @@ func New(cfg config.AuthConfig) (*Authenticator, error) {
 		a.method = method
 	}
 
+	// Validate remote endpoint URLs at startup — reject private/link-local
+	// addresses to prevent SSRF against cloud metadata services.
+	if cfg.Verify != nil {
+		if err := validateEndpointURL(cfg.Verify.URL); err != nil {
+			return nil, fmt.Errorf("auth.verify.url: %w", err)
+		}
+	}
+	if cfg.Refresh != nil {
+		if err := validateEndpointURL(cfg.Refresh.URL); err != nil {
+			return nil, fmt.Errorf("auth.refresh.url: %w", err)
+		}
+	}
+
 	return a, nil
 }
 
 // Validate checks a JWT token and returns the extracted claims.
-// It performs local signature/expiry validation first, then optional
-// remote verification if configured.
+// Performs local signature/expiry/issuer/audience validation first,
+// then optional remote verification if configured.
 func (a *Authenticator) Validate(ctx context.Context, rawToken string) (*Claims, error) {
-	// Step 1: Local JWT validation (signature + expiry).
 	claims, err := a.validateLocal(rawToken)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 2: Remote verification (if configured).
 	if a.cfg.Verify != nil {
 		if err := a.verifyRemote(ctx, rawToken); err != nil {
 			return nil, err
@@ -113,13 +125,12 @@ func (a *Authenticator) Validate(ctx context.Context, rawToken string) (*Claims,
 // IsExpired checks whether the given claims have expired.
 func (a *Authenticator) IsExpired(c *Claims) bool {
 	if c.ExpiresAt.IsZero() {
-		return false // No expiry set -- treat as valid.
+		return false
 	}
 	return time.Now().After(c.ExpiresAt)
 }
 
 // Refresh attempts to obtain a new token using the refresh endpoint.
-// Returns the new raw token string on success.
 func (a *Authenticator) Refresh(ctx context.Context, refreshToken string) (string, error) {
 	if a.cfg.Refresh == nil {
 		return "", ErrRefreshFailed
@@ -140,7 +151,6 @@ func (a *Authenticator) RefreshEnabled() bool {
 }
 
 // RefreshInterval returns the configured refresh interval.
-// Returns 0 if refresh is not configured.
 func (a *Authenticator) RefreshInterval() time.Duration {
 	if a.cfg.Refresh == nil {
 		return 0
@@ -148,11 +158,29 @@ func (a *Authenticator) RefreshInterval() time.Duration {
 	return time.Duration(a.cfg.Refresh.IntervalSeconds) * time.Second
 }
 
-// validateLocal performs local JWT signature and expiry validation.
+// validateLocal performs local JWT validation: signature, expiry,
+// algorithm, and optionally issuer and audience.
 func (a *Authenticator) validateLocal(rawToken string) (*Claims, error) {
-	parser := jwt.NewParser(
+	parserOpts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{a.method.Alg()}),
-	)
+	}
+
+	// Require expiry claim by default. Tokens without exp are rejected.
+	if a.cfg.RequireExpiry != nil && *a.cfg.RequireExpiry {
+		parserOpts = append(parserOpts, jwt.WithExpirationRequired())
+	}
+
+	// Add issuer validation if configured.
+	if a.cfg.ExpectedIssuer != "" {
+		parserOpts = append(parserOpts, jwt.WithIssuer(a.cfg.ExpectedIssuer))
+	}
+
+	// Add audience validation if configured.
+	if a.cfg.ExpectedAudience != "" {
+		parserOpts = append(parserOpts, jwt.WithAudience(a.cfg.ExpectedAudience))
+	}
+
+	parser := jwt.NewParser(parserOpts...)
 
 	token, err := parser.Parse(rawToken, func(t *jwt.Token) (interface{}, error) {
 		return a.key, nil
@@ -172,8 +200,10 @@ func (a *Authenticator) validateLocal(rawToken string) (*Claims, error) {
 		return nil, fmt.Errorf("%w: claim '%s' not found", ErrNoIdentity, a.cfg.IdentityClaim)
 	}
 	identity := fmt.Sprintf("%v", identityRaw)
-	if identity == "" {
-		return nil, ErrNoIdentity
+
+	// Validate identity is safe for use as a Redis channel component.
+	if err := config.ValidateIdentity(identity); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadIdentity, err)
 	}
 
 	// Extract expiry if present.
@@ -208,7 +238,6 @@ func (a *Authenticator) verifyRemote(ctx context.Context, rawToken string) error
 		return fmt.Errorf("%w: %v", ErrVerifyFailed, err)
 	}
 
-	// The active field should be truthy.
 	if result != "true" && result != "1" {
 		return ErrVerifyFailed
 	}
@@ -242,7 +271,6 @@ func (a *Authenticator) evictIfNeeded() {
 		return
 	}
 
-	// Evict the 10% oldest entries by last access time.
 	evictCount := maxCacheEntries / 10
 	if evictCount < 1 {
 		evictCount = 1
@@ -317,7 +345,7 @@ func (a *Authenticator) callRemote(ctx context.Context, endpoint, method, tokenP
 		return "", fmt.Errorf("remote returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16)) // 64KB limit.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
 		return "", err
 	}
@@ -348,10 +376,70 @@ func (a *Authenticator) ClearCache() {
 }
 
 // hashToken produces a fixed-size SHA-256 hex digest of a token string.
-// Prevents the cache from storing arbitrarily large keys.
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
+}
+
+// validateEndpointURL resolves the hostname in a URL and rejects private,
+// link-local, and loopback addresses to prevent SSRF attacks.
+func validateEndpointURL(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("URL has no hostname")
+	}
+
+	// Resolve to IP addresses.
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+	}
+
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if isBlockedIP(ip) {
+			return fmt.Errorf("blocked address %s (resolves from %s)", ipStr, host)
+		}
+	}
+
+	return nil
+}
+
+// isBlockedIP returns true for private, link-local, and loopback addresses.
+func isBlockedIP(ip net.IP) bool {
+	// RFC 1918 private ranges, loopback, link-local, metadata endpoints.
+	blockedRanges := []struct {
+		network string
+	}{
+		{"10.0.0.0/8"},
+		{"172.16.0.0/12"},
+		{"192.168.0.0/16"},
+		{"127.0.0.0/8"},
+		{"169.254.0.0/16"}, // Link-local / cloud metadata (AWS, GCP, Azure).
+		{"::1/128"},        // IPv6 loopback.
+		{"fc00::/7"},       // IPv6 unique local.
+		{"fe80::/10"},      // IPv6 link-local.
+	}
+
+	for _, b := range blockedRanges {
+		_, network, err := net.ParseCIDR(b.network)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // loadPublicKey reads a PEM-encoded public key and returns the parsed key

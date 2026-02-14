@@ -51,6 +51,8 @@ func main() {
 	}
 	logger.Info("authenticator initialized",
 		"identity_claim", cfg.Auth.IdentityClaim,
+		"expected_issuer", cfg.Auth.ExpectedIssuer,
+		"expected_audience", cfg.Auth.ExpectedAudience,
 		"verify_enabled", cfg.Auth.Verify != nil,
 		"refresh_enabled", cfg.Auth.Refresh != nil,
 	)

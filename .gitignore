@@ -22,8 +22,6 @@ vendor/
 gencontext.py
 context/
 
-# OS / Utils
-.DS_Store
+# Utils
 tags
 ctags
-
