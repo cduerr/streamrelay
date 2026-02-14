@@ -22,6 +22,8 @@ server:
   allowed_origins:
     - "http://localhost:3000"
     - "http://localhost:5173"
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
   # Restrict the /stats endpoint to a specific identity. When set, only
   # tokens with this identity value can access /stats. When empty, any
   # authenticated user can access it.
