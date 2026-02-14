@@ -11,8 +11,9 @@ publishes, your frontend receives. StreamRelay is just plumbing.
 
 ## Disclaimer
 
-Entirely LLM-Generated - I just wanted something quick and dirty, so please
-review before using in production. 
+This code is entirely LLM-Generated (in Feb 2026 using Claude Opus 4.6). I needed it for a POC and seemed like
+something that could be reusable. While it has been through four LLM security audits with revisions at each stage, 
+it has not been reviewed in full by a human. Use it at your own risk.
 
 ## Architecture
 

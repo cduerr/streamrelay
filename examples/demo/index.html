@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamRelay Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: #fff;
+  }
+
+  .subtitle {
+    color: #888;
+    font-size: 0.85rem;
+    margin-bottom: 2rem;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.8rem;
+    color: #888;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #555;
+    transition: background 0.3s;
+  }
+
+  .status-dot.connected { background: #4ade80; }
+  .status-dot.error { background: #f87171; }
+
+  .panels {
+    display: flex;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 800px;
+  }
+
+  .panel {
+    flex: 1;
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .panel h2 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* --- Spinner --- */
+
+  .ring-container {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    margin-bottom: 1rem;
+  }
+
+  .ring-container svg {
+    transform: rotate(-90deg);
+    width: 140px;
+    height: 140px;
+  }
+
+  .ring-bg {
+    fill: none;
+    stroke: #2a2d3a;
+    stroke-width: 8;
+  }
+
+  .ring-fill {
+    fill: none;
+    stroke: #6366f1;
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 377;
+    stroke-dashoffset: 377;
+    transition: stroke-dashoffset 0.08s linear;
+  }
+
+  .ring-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  /* --- Chat --- */
+
+  .chat-box {
+    width: 100%;
+    height: 200px;
+    background: #12141c;
+    border: 1px solid #2a2d3a;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: #ccc;
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  .chat-box .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: #6366f1;
+    margin-left: 1px;
+    animation: blink 0.8s step-end infinite;
+    vertical-align: text-bottom;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* --- Buttons --- */
+
+  button {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: #6366f1;
+    color: #fff;
+    transition: background 0.2s;
+  }
+
+  button:hover { background: #5558e6; }
+
+  button:disabled {
+    background: #333;
+    color: #666;
+    cursor: not-allowed;
+  }
+
+  .log {
+    margin-top: 1.5rem;
+    width: 100%;
+    max-width: 800px;
+    font-size: 0.7rem;
+    color: #555;
+    max-height: 80px;
+    overflow-y: auto;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+
+  .log div { padding: 1px 0; }
+</style>
+</head>
+<body>
+
+<h1>StreamRelay Demo</h1>
+<p class="subtitle">Real-time event delivery via Redis → SSE</p>
+
+<div class="status">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="statusText">Connecting...</span>
+</div>
+
+<div class="panels">
+  <!-- Spinner Panel -->
+  <div class="panel">
+    <h2>Progress</h2>
+    <div class="ring-container">
+      <svg viewBox="0 0 140 140">
+        <circle class="ring-bg" cx="70" cy="70" r="60" />
+        <circle class="ring-fill" id="ringFill" cx="70" cy="70" r="60" />
+      </svg>
+      <div class="ring-text" id="ringText">0</div>
+    </div>
+    <button id="spinnerBtn" onclick="startSpinner()" disabled>Start</button>
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="panel">
+    <h2>Chat Stream</h2>
+    <div class="chat-box" id="chatBox"></div>
+    <button id="chatBtn" onclick="startChat()" disabled>Start</button>
+  </div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+const API = '';  // Same origin (Flask).
+let STREAM_URL = 'http://localhost:8080';
+let token = null;
+let identity = 'demo-user';
+let eventSource = null;
+
+// --- Logging ---
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+  line.textContent = `${ts}  ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// --- Connection ---
+
+function setStatus(state, text) {
+  document.getElementById('statusDot').className = `status-dot ${state}`;
+  document.getElementById('statusText').textContent = text;
+}
+
+async function connect() {
+  try {
+    // Get StreamRelay URL from the Flask config endpoint.
+    const cfgRes = await fetch(`${API}/config`);
+    const cfg = await cfgRes.json();
+    STREAM_URL = cfg.streamrelay_url;
+    log(`StreamRelay at ${STREAM_URL}`);
+
+    // Get a JWT.
+    const authRes = await fetch(`${API}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity }),
+    });
+    const auth = await authRes.json();
+    token = auth.token;
+    log(`Got token for "${auth.identity}"`);
+
+    // Connect SSE to StreamRelay.
+    const url = `${STREAM_URL}/events?token=${token}`;
+    eventSource = new EventSource(url);
+
+    eventSource.addEventListener('connected', (e) => {
+      setStatus('connected', `Connected as ${JSON.parse(e.data).identity}`);
+      log('SSE connected');
+      document.getElementById('spinnerBtn').disabled = false;
+      document.getElementById('chatBtn').disabled = false;
+    });
+
+    eventSource.addEventListener('message', (e) => {
+      const data = JSON.parse(e.data);
+      handleEvent(data);
+    });
+
+    eventSource.addEventListener('heartbeat', () => {
+      log('heartbeat');
+    });
+
+    eventSource.addEventListener('auth_expired', () => {
+      setStatus('error', 'Token expired');
+      log('Token expired — refresh and reconnect');
+    });
+
+    eventSource.onerror = () => {
+      setStatus('error', 'Disconnected');
+      log('SSE error / disconnected');
+    };
+
+  } catch (err) {
+    setStatus('error', 'Connection failed');
+    log(`Error: ${err.message}`);
+  }
+}
+
+// --- Event Router ---
+
+function handleEvent(data) {
+  switch (data.type) {
+    case 'progress':
+      updateProgress(data.value);
+      break;
+    case 'progress_done':
+      document.getElementById('spinnerBtn').disabled = false;
+      log('Progress complete');
+      break;
+    case 'chat_token':
+      appendChatToken(data.token);
+      break;
+    case 'chat_done':
+      removeCursor();
+      document.getElementById('chatBtn').disabled = false;
+      log('Chat complete');
+      break;
+  }
+}
+
+// --- Spinner ---
+
+const CIRCUMFERENCE = 2 * Math.PI * 60; // r=60
+
+function updateProgress(value) {
+  const ring = document.getElementById('ringFill');
+  const text = document.getElementById('ringText');
+  const offset = CIRCUMFERENCE - (value / 100) * CIRCUMFERENCE;
+  ring.style.strokeDashoffset = offset;
+  text.textContent = value;
+}
+
+async function startSpinner() {
+  const btn = document.getElementById('spinnerBtn');
+  btn.disabled = true;
+  updateProgress(0);
+  log('Starting spinner...');
+
+  await fetch(`${API}/api/spinner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identity }),
+  });
+}
+
+// --- Chat ---
+
+function appendChatToken(tok) {
+  const box = document.getElementById('chatBox');
+
+  // Remove existing cursor.
+  const cursor = box.querySelector('.cursor');
+  if (cursor) cursor.remove();
+
+  // Append the token.
+  if (tok === '\n\n') {
+    box.appendChild(document.createElement('br'));
+    box.appendChild(document.createElement('br'));
+  } else {
+    box.appendChild(document.createTextNode(tok + ' '));
+  }
+
+  // Add cursor.
+  const c = document.createElement('span');
+  c.className = 'cursor';
+  box.appendChild(c);
+
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeCursor() {
+  const box = document.getElementById('chatBox');
+  const cursor = box.querySelector('.cursor');
+  if (cursor) cursor.remove();
+}
+
+async function startChat() {
+  const btn = document.getElementById('chatBtn');
+  btn.disabled = true;
+  document.getElementById('chatBox').innerHTML = '';
+  log('Starting chat...');
+
+  await fetch(`${API}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identity }),
+  });
+}
+
+// --- Boot ---
+
+connect();
+</script>
+</body>
+</html>
