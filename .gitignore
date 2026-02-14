@@ -1,6 +1,6 @@
 # Binary
-./streamrelay
-./gentoken
+streamrelay
+gentoken
 
 # Config with secrets
 config.yaml
