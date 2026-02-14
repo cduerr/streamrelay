@@ -1,0 +1,32 @@
+services:
+  streamrelay:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/streamrelay/config.yaml:ro
+    environment:
+      # Override secrets via environment variables in production.
+      # STREAMRELAY_AUTH_JWT_SECRET: "your-production-secret"
+      # STREAMRELAY_REDIS_URL: "redis://redis:6379"
+      - STREAMRELAY_REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis_data:

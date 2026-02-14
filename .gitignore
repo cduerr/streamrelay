@@ -1,0 +1,29 @@
+# Binary
+./streamrelay
+./gentoken
+
+# Config with secrets
+config.yaml
+!config.example.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# LLM-Related
+gencontext.py
+context/
+
+# OS / Utils
+.DS_Store
+tags
+ctags
+

@@ -1,0 +1,88 @@
+# StreamRelay Configuration
+# A generic JWT-authenticated Redis-to-SSE/WebSocket relay.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # Seconds between keepalive pings sent to connected clients.
+  # Also the interval at which token expiry is checked.
+  heartbeat_seconds: 30
+  # Maximum concurrent client connections (0 = unlimited).
+  max_connections_total: 10000
+  # Maximum concurrent connections per unique identity (0 = unlimited).
+  # Prevents a single user from exhausting server resources.
+  max_connections_per_identity: 5
+  # Maximum inbound WebSocket message size in bytes.
+  max_message_size_bytes: 4096
+  # Graceful shutdown timeout in seconds.
+  shutdown_timeout_seconds: 10
+  # Allowed origins for CORS and WebSocket upgrade.
+  # If empty, all cross-origin requests are rejected.
+  # Use ["*"] to allow all origins (NOT recommended for production).
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+  # Maximum connection attempts per IP per second.
+  # Applies to /events and /ws endpoints only.
+  rate_limit_per_second: 20
+
+auth:
+  # JWT signing secret for HS256/HS384/HS512 (symmetric).
+  # Set EITHER jwt_secret OR jwt_public_key, not both.
+  jwt_secret: "change-me-in-production"
+  
+  # Path to PEM-encoded public key for RS256/RS384/RS512/ES256/ES384/ES512.
+  # jwt_public_key: "/path/to/public.pem"
+  
+  # Which JWT claim contains the user/client identity.
+  # This value is used as the Redis channel suffix.
+  identity_claim: "sub"
+
+  # Optional: remote token verification endpoint.
+  # When configured, the relay will call this endpoint to verify tokens
+  # in addition to local JWT signature/expiry validation.
+  # Follows OAuth2 Token Introspection (RFC 7662) conventions by default.
+  # verify:
+  #   url: "https://api.example.com/auth/introspect"
+  #   method: "POST"                    # HTTP method
+  #   token_param: "token"              # parameter name for the JWT
+  #   token_location: "body"            # body | header | query
+  #   active_field: "active"            # response field that must be true
+  #   identity_field: "sub"             # response field containing identity
+  #   cache_seconds: 60                 # cache successful verifications
+
+  # Optional: automatic token refresh.
+  # When configured, the relay will proactively refresh tokens before expiry.
+  # The client must provide a refresh_token on connect (query param or header).
+  # If not configured, clients are notified of expiry and must reconnect.
+  # refresh:
+  #   url: "https://api.example.com/auth/refresh"
+  #   method: "POST"
+  #   token_param: "refresh_token"      # parameter name for the refresh token
+  #   token_location: "body"            # body | header | query
+  #   new_token_field: "access_token"   # response field containing new JWT
+  #   interval_seconds: 1800            # refresh this many seconds before expiry
+
+redis:
+  url: "redis://localhost:6379"
+  # Optional password (can also be in the URL as redis://:password@host:port).
+  # password: ""
+  # Redis database number (0-15).
+  db: 0
+  # Prefix for user channels. The relay subscribes to {prefix}:{identity}.
+  channel_prefix: "streams"
+
+transports:
+  # Enable Server-Sent Events endpoint at GET /events
+  sse: true
+  # Enable WebSocket endpoint at GET /ws
+  websocket: true
+  # When websocket is enabled and a client sends a message, publish it
+  # to Redis at {inbound_prefix}:{identity}. Set to "" to disable inbound.
+  inbound_prefix: "inbound"
+
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  # Log format: text or json
+  format: "text"
