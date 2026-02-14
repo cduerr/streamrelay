@@ -12,8 +12,8 @@ Both are triggered by API calls to the Flask backend, which publishes events to 
 
 ```
 ┌──────────┐     ┌───────┐     ┌─────────────┐     ┌─────────┐
-│  Flask    │────▶│ Redis │────▶│ StreamRelay │────▶│ Browser │
-│  :5000    │     │ :6379 │     │ :8080       │     │  (SSE)  │
+│  Flask   │────▶│ Redis │────▶│ StreamRelay │────▶│ Browser │
+│  :5000   │     │ :6379 │     │ :8080       │     │  (SSE)  │
 └──────────┘     └───────┘     └─────────────┘     └─────────┘
 ```
 
@@ -32,6 +32,7 @@ auth:
 server:
   allowed_origins:
     - "http://localhost:5000"
+    - "http://127.0.0.1:5000"
 ```
 
 ### 2. Start the demo app
