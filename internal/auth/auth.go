@@ -88,6 +88,17 @@ func New(cfg config.AuthConfig) (*Authenticator, error) {
 		a.method = method
 	}
 
+	// Reject conflicting config: service_token uses the Authorization header,
+	// so token_location="header" with token_param="Authorization" would collide.
+	if cfg.ServiceToken != "" {
+		if cfg.Verify != nil && strings.EqualFold(cfg.Verify.TokenLocation, "header") && strings.EqualFold(cfg.Verify.TokenParam, "Authorization") {
+			return nil, fmt.Errorf("auth.verify: token_param \"Authorization\" conflicts with service_token (both set the Authorization header)")
+		}
+		if cfg.Refresh != nil && strings.EqualFold(cfg.Refresh.TokenLocation, "header") && strings.EqualFold(cfg.Refresh.TokenParam, "Authorization") {
+			return nil, fmt.Errorf("auth.refresh: token_param \"Authorization\" conflicts with service_token (both set the Authorization header)")
+		}
+	}
+
 	// Validate remote endpoint URLs at startup — reject private/link-local
 	// addresses to prevent SSRF against cloud metadata services.
 	if cfg.Verify != nil {
@@ -333,6 +344,11 @@ func (a *Authenticator) callRemote(ctx context.Context, endpoint, method, tokenP
 
 	default:
 		return "", fmt.Errorf("unsupported token_location: %s", tokenLocation)
+	}
+
+	// Add service-to-service authentication if configured.
+	if a.cfg.ServiceToken != "" {
+		req.Header.Set("Authorization", "Bearer "+a.cfg.ServiceToken)
 	}
 
 	resp, err := a.httpClient.Do(req)

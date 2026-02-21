@@ -55,6 +55,13 @@ auth:
   # Set to false only if your token issuer intentionally omits expiry.
   require_expiry: true
 
+  # Optional: service authentication token for remote verify/refresh endpoints.
+  # When set, StreamRelay adds an "Authorization: Bearer <token>" header to
+  # all outbound requests to the verify and refresh endpoints.
+  # Use this when your API requires service-to-service authentication.
+  # IMPORTANT: Use STREAMRELAY_AUTH_SERVICE_TOKEN env var in production.
+  # service_token: ""
+
   # Optional: remote token verification endpoint.
   # When configured, the relay will call this endpoint to verify tokens
   # in addition to local JWT signature/expiry validation.

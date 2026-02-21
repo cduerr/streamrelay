@@ -47,6 +47,7 @@ type AuthConfig struct {
 	ExpectedIssuer   string         `yaml:"expected_issuer"`
 	ExpectedAudience string         `yaml:"expected_audience"`
 	RequireExpiry    *bool          `yaml:"require_expiry"`
+	ServiceToken     string         `yaml:"service_token"`
 	Verify           *VerifyConfig  `yaml:"verify,omitempty"`
 	Refresh          *RefreshConfig `yaml:"refresh,omitempty"`
 }
@@ -198,6 +199,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("STREAMRELAY_AUTH_JWT_PUBLIC_KEY"); v != "" {
 		cfg.Auth.JWTPublicKey = v
+	}
+	if v := os.Getenv("STREAMRELAY_AUTH_SERVICE_TOKEN"); v != "" {
+		cfg.Auth.ServiceToken = v
 	}
 	if v := os.Getenv("STREAMRELAY_REDIS_URL"); v != "" {
 		cfg.Redis.URL = v

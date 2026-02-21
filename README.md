@@ -182,10 +182,12 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `expected_issuer` | — | If set, reject tokens with a different `iss` claim. Prevents cross-service token reuse. |
 | `expected_audience` | — | If set, reject tokens with a different `aud` claim. |
 | `require_expiry` | `true` | Reject tokens without an `exp` (expiration) claim. |
+| `service_token` | — | Service-to-service auth token. When set, sent as `Authorization: Bearer <token>` on verify/refresh requests. |
 
 **Environment overrides:**
 - `STREAMRELAY_AUTH_JWT_SECRET` → `auth.jwt_secret`
 - `STREAMRELAY_AUTH_JWT_PUBLIC_KEY` → `auth.jwt_public_key`
+- `STREAMRELAY_AUTH_SERVICE_TOKEN` → `auth.service_token`
 
 ### `auth.verify` (optional)
 
