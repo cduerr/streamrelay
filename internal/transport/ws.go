@@ -57,7 +57,7 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := ws.auth.Validate(r.Context(), rawToken)
 	if err != nil {
-		ws.logger.Debug("WebSocket auth failed", "error", err, "remote", r.RemoteAddr)
+		ws.logger.Warn("WebSocket auth failed", "error", err, "remote", r.RemoteAddr)
 		http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 		return
 	}
