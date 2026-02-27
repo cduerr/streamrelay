@@ -20,3 +20,5 @@ ctags
 
 # Go
 vendor/
+
+.stewardmcp/
