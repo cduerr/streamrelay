@@ -29,36 +29,36 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host                   string   `yaml:"host"`
-	Port                   int      `yaml:"port"`
-	HeartbeatSeconds       int      `yaml:"heartbeat_seconds"`
-	MaxConnectionsTotal    int      `yaml:"max_connections_total"`
-	MaxConnectionsPerIdent int      `yaml:"max_connections_per_identity"`
-	MaxMessageSizeBytes    int      `yaml:"max_message_size_bytes"`
-	ClientBufferSize       int      `yaml:"client_buffer_size"`
-	SlowConsumerPolicy     string   `yaml:"slow_consumer_policy"`
-	WebSocketPingSeconds    int      `yaml:"websocket_ping_seconds"`
-	WebSocketWriteTimeoutMs int     `yaml:"websocket_write_timeout_ms"`
-	ReadHeaderTimeoutSeconds int    `yaml:"read_header_timeout_seconds"`
-	IdleTimeoutSeconds      int     `yaml:"idle_timeout_seconds"`
-	ShutdownTimeoutSeconds  int     `yaml:"shutdown_timeout_seconds"`
-	AllowedOrigins         []string `yaml:"allowed_origins"`
-	StatsIdentity          string   `yaml:"stats_identity"`
+	Host                     string   `yaml:"host"`
+	Port                     int      `yaml:"port"`
+	HeartbeatSeconds         int      `yaml:"heartbeat_seconds"`
+	MaxConnectionsTotal      int      `yaml:"max_connections_total"`
+	MaxConnectionsPerIdent   int      `yaml:"max_connections_per_identity"`
+	MaxMessageSizeBytes      int      `yaml:"max_message_size_bytes"`
+	ClientBufferSize         int      `yaml:"client_buffer_size"`
+	SlowConsumerPolicy       string   `yaml:"slow_consumer_policy"`
+	WebSocketPingSeconds     int      `yaml:"websocket_ping_seconds"`
+	WebSocketWriteTimeoutMs  int      `yaml:"websocket_write_timeout_ms"`
+	ReadHeaderTimeoutSeconds int      `yaml:"read_header_timeout_seconds"`
+	IdleTimeoutSeconds       int      `yaml:"idle_timeout_seconds"`
+	ShutdownTimeoutSeconds   int      `yaml:"shutdown_timeout_seconds"`
+	AllowedOrigins           []string `yaml:"allowed_origins"`
+	StatsIdentity            string   `yaml:"stats_identity"`
 }
 
 type AuthConfig struct {
-	JWTSecret        string         `yaml:"jwt_secret"`
-	JWTPublicKey     string         `yaml:"jwt_public_key"`
-	IdentityClaim    string         `yaml:"identity_claim"`
-	ExpectedIssuer   string         `yaml:"expected_issuer"`
-	ExpectedAudience string         `yaml:"expected_audience"`
-	RequireExpiry    *bool          `yaml:"require_expiry"`
-	ServiceToken     string         `yaml:"service_token"`
-	HTTPTimeoutSeconds int          `yaml:"http_timeout_seconds"`
-	MaxCacheEntries  int            `yaml:"max_cache_entries"`
-	MaxResponseBytes int            `yaml:"max_response_bytes"`
-	Verify           *VerifyConfig  `yaml:"verify,omitempty"`
-	Refresh          *RefreshConfig `yaml:"refresh,omitempty"`
+	JWTSecret          string         `yaml:"jwt_secret"`
+	JWTPublicKey       string         `yaml:"jwt_public_key"`
+	IdentityClaim      string         `yaml:"identity_claim"`
+	ExpectedIssuer     string         `yaml:"expected_issuer"`
+	ExpectedAudience   string         `yaml:"expected_audience"`
+	RequireExpiry      *bool          `yaml:"require_expiry"`
+	ServiceToken       string         `yaml:"service_token"`
+	HTTPTimeoutSeconds int            `yaml:"http_timeout_seconds"`
+	MaxCacheEntries    int            `yaml:"max_cache_entries"`
+	MaxResponseBytes   int            `yaml:"max_response_bytes"`
+	Verify             *VerifyConfig  `yaml:"verify,omitempty"`
+	Refresh            *RefreshConfig `yaml:"refresh,omitempty"`
 }
 
 type VerifyConfig struct {
@@ -81,12 +81,12 @@ type RefreshConfig struct {
 }
 
 type RedisConfig struct {
-	URL                  string `yaml:"url"`
-	Password             string `yaml:"password"`
-	DB                   int    `yaml:"db"`
-	ChannelPrefix        string `yaml:"channel_prefix"`
-	PingTimeoutSeconds   int    `yaml:"ping_timeout_seconds"`
-	ReconnectDelaySeconds int   `yaml:"reconnect_delay_seconds"`
+	URL                   string `yaml:"url"`
+	Password              string `yaml:"password"`
+	DB                    int    `yaml:"db"`
+	ChannelPrefix         string `yaml:"channel_prefix"`
+	PingTimeoutSeconds    int    `yaml:"ping_timeout_seconds"`
+	ReconnectDelaySeconds int    `yaml:"reconnect_delay_seconds"`
 }
 
 type TransportsConfig struct {
@@ -305,7 +305,7 @@ func (c *Config) ChannelForIdentity(identity string) string {
 }
 
 // InboundChannelForIdentity returns the Redis inbound channel for a given identity.
-// Returns empty string if inbound publishing is disabled.
+// Returns an empty string if inbound publishing is disabled.
 func (c *Config) InboundChannelForIdentity(identity string) string {
 	if c.Transports.InboundPrefix == "" {
 		return ""

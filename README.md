@@ -473,6 +473,8 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
     - Uptime
 - [ ] Remove `max_connections_per_identity` — policy belongs in application layer, not plumbing
 - [ ] Unit tests
+- [ ] Makefile
+- [ ] Linting
 - [ ] Security audit
 
 ### High Volume Scaling

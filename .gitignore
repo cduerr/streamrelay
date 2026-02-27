@@ -6,22 +6,17 @@ gentoken
 config.yaml
 !config.example.yaml
 
-# IDE
+# IDE, LLMs
 .idea/
 .vscode/
-*.swp
+.claude/
 
-# OS
+# OS, Apps, Misc
 .DS_Store
 Thumbs.db
+*.swp
+tags
+ctags
 
 # Go
 vendor/
-
-# LLM-Related
-gencontext.py
-context/
-
-# Utils
-tags
-ctags
