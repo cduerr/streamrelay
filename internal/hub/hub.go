@@ -79,18 +79,21 @@ type Hub struct {
 	maxPerIdentity   int
 	maxTotal         int
 	clientBufferSize int
+	dropNewest       bool // true = drop message on full buffer; false = drop client
 	totalConnections int
 
 	logger *slog.Logger
 }
 
-// New creates a Hub with the given connection limits and client buffer size.
-func New(maxPerIdentity, maxTotal, clientBufferSize int, logger *slog.Logger) *Hub {
+// New creates a Hub with the given connection limits, client buffer size,
+// and slow consumer policy ("drop_client" or "drop_newest_message").
+func New(maxPerIdentity, maxTotal, clientBufferSize int, slowConsumerPolicy string, logger *slog.Logger) *Hub {
 	return &Hub{
 		clients:          make(map[string]map[*Client]struct{}),
 		maxPerIdentity:   maxPerIdentity,
 		maxTotal:         maxTotal,
 		clientBufferSize: clientBufferSize,
+		dropNewest:       slowConsumerPolicy == "drop_newest_message",
 		logger:           logger,
 	}
 }
@@ -162,7 +165,9 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 // Send delivers a message to all clients with the given identity.
-// Clients whose send buffer is full are dropped (slow consumer protection).
+// When a client's buffer is full, behavior depends on the slow consumer
+// policy: drop_client disconnects the client; drop_newest_message silently
+// discards the message for that client.
 func (h *Hub) Send(identity string, data []byte) {
 	h.mu.RLock()
 	identClients, exists := h.clients[identity]
@@ -183,12 +188,20 @@ func (h *Hub) Send(identity string, data []byte) {
 		case c.Send <- data:
 			// Delivered.
 		default:
-			// Send buffer full — slow consumer. Drop the client.
-			h.logger.Warn("dropping slow client",
-				"client_id", c.ID,
-				"identity", c.Identity,
-			)
-			h.Unregister(c)
+			if h.dropNewest {
+				// Buffer full — drop the message for this client.
+				h.logger.Warn("dropping message for slow client",
+					"client_id", c.ID,
+					"identity", c.Identity,
+				)
+			} else {
+				// Buffer full — drop the client.
+				h.logger.Warn("dropping slow client",
+					"client_id", c.ID,
+					"identity", c.Identity,
+				)
+				h.Unregister(c)
+			}
 		}
 	}
 }

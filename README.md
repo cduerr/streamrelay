@@ -1,19 +1,12 @@
 # StreamRelay
 
-A generic, JWT-authenticated Redis-to-SSE/WebSocket relay. 
-One persistent connection per client. Any service publishes 
-events to Redis, StreamRelay delivers them them in real-time.
+A generic, scalable JWT-authenticated Redis-to-SSE/WebSocket relay. 
+One persistent connection per client. 
 
 StreamRelay doesn't know anything about your application. 
 It validates JWTs, extracts an identity, subscribes to a Redis 
 channel for that identity, and relays messages. Your backend 
 publishes, your frontend receives. StreamRelay is just plumbing.
-
-## Disclaimer
-
-This code is entirely LLM-Generated (in Feb 2026 using Claude Opus 4.6). I needed it for a POC and seemed like
-something that could be reusable. While it has been through four LLM security audits with revisions at each stage, 
-it has not been reviewed in full by a human. Use it at your own risk.
 
 ## Architecture
 
@@ -168,6 +161,8 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `max_connections_total` | `0` | Max concurrent connections (0 = unlimited) |
 | `max_connections_per_identity` | `0` | Max connections per user (0 = unlimited) |
 | `max_message_size_bytes` | `4096` | Max inbound WebSocket message size |
+| `client_buffer_size` | `64` | Per-client send buffer (number of messages). When full, `slow_consumer_policy` determines behavior. |
+| `slow_consumer_policy` | `drop_newest_message` | What happens when a client's buffer is full: `drop_newest_message` discards the message silently; `drop_client` disconnects the slow client. |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout |
 | `allowed_origins` | `[]` | CORS allowed origins. Empty rejects all cross-origin requests. Use `["*"]` to allow all (not recommended). |
 | `stats_identity` | — | If set, only this identity can access `/stats`. When empty, any authenticated user can access it. |
@@ -237,7 +232,7 @@ The client must provide a refresh token on connect via the `X-Refresh-Token` hea
 |-----|---------|-------------|
 | `sse` | `true` | Enable SSE endpoint at `GET /events` |
 | `websocket` | `true` | Enable WebSocket endpoint at `GET /ws` |
-| `inbound_prefix` | `inbound` | Redis channel prefix for WebSocket inbound messages. Empty string disables inbound publishing. |
+| `inbound_prefix` | — | Redis channel prefix for WebSocket inbound messages (`{prefix}:{identity}`). Empty or omitted disables inbound publishing. |
 
 ### `logging`
 
@@ -433,6 +428,11 @@ pub = EventPublisher()
 pub.send("42", "media_progress", {"media_id": 123, "step": "whisperx", "pct": 45})
 pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 ```
+
+## TODO
+
+[ ] Max connection tracking should be global, not per-instance
+[ ] Prometheus metrics endpoint (global stats)
 
 ## License
 

@@ -62,6 +62,7 @@ func main() {
 		cfg.Server.MaxConnectionsPerIdent,
 		cfg.Server.MaxConnectionsTotal,
 		cfg.Server.ClientBufferSize,
+		cfg.Server.SlowConsumerPolicy,
 		logger,
 	)
 
