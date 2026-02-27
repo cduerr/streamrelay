@@ -4,7 +4,7 @@ Scalable JWT-authenticated Redis-to-SSE/WebSocket relay.
 
 StreamRelay decouples the real-time small message transport from your business logic so any service on your backend may instantly reach a user's browser or device:
 
-`[Client] ←― WS/SSE ―→ [StreamRelay] ←→ [Redis] ←→ [Your Backend]`
+`[Client] ←WS/SSE→ [StreamRelay] ←→ [Redis] ←→ [Your Backend]`
 
 StreamRelay is intended for real-time use cases, including:
 - Notifications
@@ -470,7 +470,6 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 
 - [ ] Per-identity stats endpoint (`GET /stats/identity/{id}`) — local only, no Redis
 - [ ] Bulk identity stats endpoint (`GET /stats/identities`) — local counts for monitoring
-- [x] Dropped message atomic counter (replace per-drop warn log which will kill throughput at scale)
 - [ ] Unified metrics collector with two presentation layers:
   - `GET /stats` — JSON for humans/scripts
   - `GET /metrics` — Prometheus exposition format
@@ -481,9 +480,7 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
     - Messages dropped (count)
     - Uptime
 - [ ] Remove `max_connections_per_identity` — policy belongs in application layer, not plumbing
-- [x] Unit tests
-- [x] Makefile
-- [x] Linting
+- [ ] 100% Unit test coverage
 - [ ] Security audit
 
 ### High Volume Scaling
