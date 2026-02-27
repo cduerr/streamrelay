@@ -91,10 +91,10 @@ func New(cfg *config.Config, h *hub.Hub, a *auth.Authenticator, b *broker.RedisB
 		http: &http.Server{
 			Addr:              cfg.Addr(),
 			Handler:           handler,
-			ReadTimeout:       0,             // Must be 0 for SSE/WebSocket (long-lived).
-			ReadHeaderTimeout: 5 * time.Second, // Slowloris protection.
-			WriteTimeout:      0,             // Must be 0 for SSE/WebSocket (long-lived).
-			IdleTimeout:       120 * time.Second,
+			ReadTimeout:       0, // Must be 0 for SSE/WebSocket (long-lived).
+			ReadHeaderTimeout: time.Duration(cfg.Server.ReadHeaderTimeoutSeconds) * time.Second,
+			WriteTimeout:      0, // Must be 0 for SSE/WebSocket (long-lived).
+			IdleTimeout:       time.Duration(cfg.Server.IdleTimeoutSeconds) * time.Second,
 		},
 	}
 }

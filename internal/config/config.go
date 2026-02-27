@@ -39,6 +39,8 @@ type ServerConfig struct {
 	SlowConsumerPolicy     string   `yaml:"slow_consumer_policy"`
 	WebSocketPingSeconds    int      `yaml:"websocket_ping_seconds"`
 	WebSocketWriteTimeoutMs int     `yaml:"websocket_write_timeout_ms"`
+	ReadHeaderTimeoutSeconds int    `yaml:"read_header_timeout_seconds"`
+	IdleTimeoutSeconds      int     `yaml:"idle_timeout_seconds"`
 	ShutdownTimeoutSeconds  int     `yaml:"shutdown_timeout_seconds"`
 	AllowedOrigins         []string `yaml:"allowed_origins"`
 	StatsIdentity          string   `yaml:"stats_identity"`
@@ -52,6 +54,9 @@ type AuthConfig struct {
 	ExpectedAudience string         `yaml:"expected_audience"`
 	RequireExpiry    *bool          `yaml:"require_expiry"`
 	ServiceToken     string         `yaml:"service_token"`
+	HTTPTimeoutSeconds int          `yaml:"http_timeout_seconds"`
+	MaxCacheEntries  int            `yaml:"max_cache_entries"`
+	MaxResponseBytes int            `yaml:"max_response_bytes"`
 	Verify           *VerifyConfig  `yaml:"verify,omitempty"`
 	Refresh          *RefreshConfig `yaml:"refresh,omitempty"`
 }
@@ -76,10 +81,12 @@ type RefreshConfig struct {
 }
 
 type RedisConfig struct {
-	URL           string `yaml:"url"`
-	Password      string `yaml:"password"`
-	DB            int    `yaml:"db"`
-	ChannelPrefix string `yaml:"channel_prefix"`
+	URL                  string `yaml:"url"`
+	Password             string `yaml:"password"`
+	DB                   int    `yaml:"db"`
+	ChannelPrefix        string `yaml:"channel_prefix"`
+	PingTimeoutSeconds   int    `yaml:"ping_timeout_seconds"`
+	ReconnectDelaySeconds int   `yaml:"reconnect_delay_seconds"`
 }
 
 type TransportsConfig struct {
@@ -142,6 +149,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.WebSocketWriteTimeoutMs == 0 {
 		cfg.Server.WebSocketWriteTimeoutMs = 10000
 	}
+	if cfg.Server.ReadHeaderTimeoutSeconds == 0 {
+		cfg.Server.ReadHeaderTimeoutSeconds = 5
+	}
+	if cfg.Server.IdleTimeoutSeconds == 0 {
+		cfg.Server.IdleTimeoutSeconds = 120
+	}
 	if cfg.Server.ShutdownTimeoutSeconds == 0 {
 		cfg.Server.ShutdownTimeoutSeconds = 10
 	}
@@ -152,11 +165,26 @@ func applyDefaults(cfg *Config) {
 		t := true
 		cfg.Auth.RequireExpiry = &t
 	}
+	if cfg.Auth.HTTPTimeoutSeconds == 0 {
+		cfg.Auth.HTTPTimeoutSeconds = 10
+	}
+	if cfg.Auth.MaxCacheEntries == 0 {
+		cfg.Auth.MaxCacheEntries = 10000
+	}
+	if cfg.Auth.MaxResponseBytes == 0 {
+		cfg.Auth.MaxResponseBytes = 65536
+	}
 	if cfg.Redis.URL == "" {
 		cfg.Redis.URL = "redis://localhost:6379"
 	}
 	if cfg.Redis.ChannelPrefix == "" {
 		cfg.Redis.ChannelPrefix = "streams"
+	}
+	if cfg.Redis.PingTimeoutSeconds == 0 {
+		cfg.Redis.PingTimeoutSeconds = 5
+	}
+	if cfg.Redis.ReconnectDelaySeconds == 0 {
+		cfg.Redis.ReconnectDelaySeconds = 2
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"

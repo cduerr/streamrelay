@@ -28,6 +28,10 @@ server:
   # Maximum time in milliseconds to wait for a WebSocket write (message
   # or ping) to complete before closing the connection.
   # websocket_write_timeout_ms: 10000
+  # Max time to read request headers before closing (Slowloris protection).
+  # read_header_timeout_seconds: 5
+  # Close idle keep-alive connections after this many seconds.
+  # idle_timeout_seconds: 120
   # Graceful shutdown timeout in seconds.
   shutdown_timeout_seconds: 10
   # Allowed origins for CORS and WebSocket upgrade.
@@ -76,6 +80,13 @@ auth:
   # IMPORTANT: Use STREAMRELAY_AUTH_SERVICE_TOKEN env var in production.
   # service_token: ""
 
+  # Timeout in seconds for HTTP requests to verify/refresh endpoints.
+  # http_timeout_seconds: 10
+  # Maximum entries in the remote verification cache.
+  # max_cache_entries: 10000
+  # Maximum response body size in bytes from verify/refresh endpoints.
+  # max_response_bytes: 65536
+
   # Optional: remote token verification endpoint.
   # When configured, the relay will call this endpoint to verify tokens
   # in addition to local JWT signature/expiry validation.
@@ -110,6 +121,10 @@ redis:
   db: 0
   # Prefix for user channels. The relay subscribes to {prefix}:{identity}.
   channel_prefix: "streams"
+  # Timeout in seconds for the initial Redis PING on startup.
+  # ping_timeout_seconds: 5
+  # Seconds to wait before retrying after a Redis subscription failure.
+  # reconnect_delay_seconds: 2
 
 transports:
   # Enable Server-Sent Events endpoint at GET /events

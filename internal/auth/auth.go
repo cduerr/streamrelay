@@ -34,10 +34,6 @@ var (
 	ErrRefreshFailed = errors.New("token refresh failed")
 )
 
-const (
-	// Maximum number of entries in the verification cache.
-	maxCacheEntries = 10000
-)
 
 // Claims represents the relevant JWT claims extracted during validation.
 type Claims struct {
@@ -72,7 +68,7 @@ func New(cfg config.AuthConfig) (*Authenticator, error) {
 		cfg:   cfg,
 		cache: make(map[string]cacheEntry),
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: time.Duration(cfg.HTTPTimeoutSeconds) * time.Second,
 		},
 	}
 
@@ -278,11 +274,11 @@ func (a *Authenticator) touchCacheEntry(key string) {
 // evictIfNeeded removes the least recently used entries if the cache
 // exceeds its maximum size. Must be called with cacheMu held.
 func (a *Authenticator) evictIfNeeded() {
-	if len(a.cache) < maxCacheEntries {
+	if len(a.cache) < a.cfg.MaxCacheEntries {
 		return
 	}
 
-	evictCount := maxCacheEntries / 10
+	evictCount := a.cfg.MaxCacheEntries / 10
 	if evictCount < 1 {
 		evictCount = 1
 	}
@@ -361,7 +357,7 @@ func (a *Authenticator) callRemote(ctx context.Context, endpoint, method, tokenP
 		return "", fmt.Errorf("remote returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(a.cfg.MaxResponseBytes)))
 	if err != nil {
 		return "", err
 	}

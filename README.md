@@ -169,6 +169,8 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `slow_consumer_policy` | `drop_newest_message` | What happens when a client's buffer is full: `drop_newest_message` discards the message silently; `drop_client` disconnects the slow client. |
 | `websocket_ping_seconds` | `30` | Seconds between WebSocket ping frames. Dead connections are detected after two missed pongs. |
 | `websocket_write_timeout_ms` | `10000` | Max time in milliseconds for a WebSocket write to complete before the connection is closed. |
+| `read_header_timeout_seconds` | `5` | Max time to read request headers (Slowloris protection). |
+| `idle_timeout_seconds` | `120` | Close idle keep-alive connections after this many seconds. |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout |
 | `allowed_origins` | `[]` | CORS allowed origins. Empty rejects all cross-origin requests. Use `["*"]` to allow all (not recommended). |
 | `stats_identity` | — | If set, only this identity can access `/stats`. When empty, any authenticated user can access it. |
@@ -184,6 +186,9 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `expected_audience` | — | If set, reject tokens with a different `aud` claim. |
 | `require_expiry` | `true` | Reject tokens without an `exp` (expiration) claim. |
 | `service_token` | — | Service-to-service auth token. When set, sent as `Authorization: Bearer <token>` on verify/refresh requests. |
+| `http_timeout_seconds` | `10` | Timeout for HTTP requests to remote verify/refresh endpoints. |
+| `max_cache_entries` | `10000` | Maximum entries in the remote verification cache. |
+| `max_response_bytes` | `65536` | Maximum response body size from verify/refresh endpoints. |
 
 **Environment overrides:**
 - `STREAMRELAY_AUTH_JWT_SECRET` → `auth.jwt_secret`
@@ -227,6 +232,8 @@ The client must provide a refresh token on connect via the `X-Refresh-Token` hea
 | `password` | — | Redis password (can also be in URL) |
 | `db` | `0` | Redis database number |
 | `channel_prefix` | `streams` | Subscribes to `{prefix}:*`, routes to identity |
+| `ping_timeout_seconds` | `5` | Timeout for the initial Redis PING on startup. |
+| `reconnect_delay_seconds` | `2` | Seconds to wait before retrying after a subscription failure. |
 
 **Environment overrides:**
 - `STREAMRELAY_REDIS_URL` → `redis.url`
