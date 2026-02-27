@@ -1,0 +1,12 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - bodyclose
+    - gocritic
+    - misspell
+    - errname
+
+issues:
+  exclude-use-default: true

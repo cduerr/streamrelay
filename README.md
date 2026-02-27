@@ -312,6 +312,8 @@ Detailed connection statistics. Requires JWT authentication. If `stats_identity`
   "status": "ok",
   "connections": 150,
   "identities": 42,
+  "messages_dropped": 0,
+  "clients_dropped": 0,
   "uptime": "2h30m15s"
 }
 ```
@@ -347,11 +349,18 @@ The SSE `EventSource` API does not support custom headers, so `?token=` query pa
 ## Building from Source
 
 ```bash
-# Build the server
-go build -o streamrelay ./cmd/streamrelay
+# Build both binaries
+make build
 
-# Build the token generator
+# Or individually
+go build -o streamrelay ./cmd/streamrelay
 go build -o gentoken ./scripts/gentoken
+
+# Run tests
+make test
+
+# Run linter
+make lint
 
 # Run
 ./streamrelay --config config.yaml
@@ -461,7 +470,7 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 
 - [ ] Per-identity stats endpoint (`GET /stats/identity/{id}`) — local only, no Redis
 - [ ] Bulk identity stats endpoint (`GET /stats/identities`) — local counts for monitoring
-- [ ] Dropped message atomic counter (replace per-drop warn log which will kill throughput at scale)
+- [x] Dropped message atomic counter (replace per-drop warn log which will kill throughput at scale)
 - [ ] Unified metrics collector with two presentation layers:
   - `GET /stats` — JSON for humans/scripts
   - `GET /metrics` — Prometheus exposition format
@@ -472,9 +481,9 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
     - Messages dropped (count)
     - Uptime
 - [ ] Remove `max_connections_per_identity` — policy belongs in application layer, not plumbing
-- [ ] Unit tests
-- [ ] Makefile
-- [ ] Linting
+- [x] Unit tests
+- [x] Makefile
+- [x] Linting
 - [ ] Security audit
 
 ### High Volume Scaling

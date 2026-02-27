@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/streamrelay/streamrelay/internal/auth"
 )
+
+// Stats holds a snapshot of hub connection and drop statistics.
+type Stats struct {
+	Connections     int
+	Identities      int
+	MessagesDropped int64
+	ClientsDropped  int64
+}
 
 // Client represents a single connected client (SSE or WebSocket).
 type Client struct {
@@ -81,6 +90,9 @@ type Hub struct {
 	clientBufferSize int
 	dropNewest       bool // true = drop message on full buffer; false = drop client
 	totalConnections int
+
+	messagesDropped atomic.Int64
+	clientsDropped  atomic.Int64
 
 	logger *slog.Logger
 }
@@ -189,17 +201,9 @@ func (h *Hub) Send(identity string, data []byte) {
 			// Delivered.
 		default:
 			if h.dropNewest {
-				// Buffer full — drop the message for this client.
-				h.logger.Warn("dropping message for slow client",
-					"client_id", c.ID,
-					"identity", c.Identity,
-				)
+				h.messagesDropped.Add(1)
 			} else {
-				// Buffer full — drop the client.
-				h.logger.Warn("dropping slow client",
-					"client_id", c.ID,
-					"identity", c.Identity,
-				)
+				h.clientsDropped.Add(1)
 				h.Unregister(c)
 			}
 		}
@@ -249,11 +253,16 @@ func (h *Hub) ActiveIdentities() []string {
 	return ids
 }
 
-// Stats returns current connection statistics.
-func (h *Hub) Stats() (total int, identities int) {
+// Stats returns current connection and drop statistics.
+func (h *Hub) Stats() Stats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.totalConnections, len(h.clients)
+	return Stats{
+		Connections:     h.totalConnections,
+		Identities:      len(h.clients),
+		MessagesDropped: h.messagesDropped.Load(),
+		ClientsDropped:  h.clientsDropped.Load(),
+	}
 }
 
 // RunHeartbeat periodically sends heartbeat events to all clients
@@ -263,6 +272,8 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 	defer ticker.Stop()
 
 	heartbeatMsg := []byte("event: heartbeat\ndata: {}\n\n")
+
+	var lastMsgDropped, lastCliDropped int64
 
 	for {
 		select {
@@ -341,6 +352,18 @@ func (h *Hub) RunHeartbeat(ctx context.Context, interval time.Duration, authenti
 
 			// Periodic cache cleanup.
 			authenticator.ClearCache()
+
+			// Log drop deltas since last tick.
+			msgDropped := h.messagesDropped.Load()
+			cliDropped := h.clientsDropped.Load()
+			if deltaMsgs, deltaClis := msgDropped-lastMsgDropped, cliDropped-lastCliDropped; deltaMsgs > 0 || deltaClis > 0 {
+				h.logger.Warn("drops since last heartbeat",
+					"messages_dropped", deltaMsgs,
+					"clients_dropped", deltaClis,
+				)
+			}
+			lastMsgDropped = msgDropped
+			lastCliDropped = cliDropped
 		}
 	}
 }

@@ -52,13 +52,15 @@ func New(cfg *config.Config, h *hub.Hub, a *auth.Authenticator, b *broker.RedisB
 			return
 		}
 
-		total, identities := h.Stats()
+		stats := h.Stats()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":      "ok",
-			"connections": total,
-			"identities":  identities,
-			"uptime":      time.Since(startTime).String(),
+			"status":           "ok",
+			"connections":      stats.Connections,
+			"identities":       stats.Identities,
+			"messages_dropped": stats.MessagesDropped,
+			"clients_dropped":  stats.ClientsDropped,
+			"uptime":           time.Since(startTime).String(),
 		})
 	})
 
