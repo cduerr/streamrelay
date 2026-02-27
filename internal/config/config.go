@@ -35,6 +35,7 @@ type ServerConfig struct {
 	MaxConnectionsTotal    int      `yaml:"max_connections_total"`
 	MaxConnectionsPerIdent int      `yaml:"max_connections_per_identity"`
 	MaxMessageSizeBytes    int      `yaml:"max_message_size_bytes"`
+	ClientBufferSize       int      `yaml:"client_buffer_size"`
 	ShutdownTimeoutSeconds int      `yaml:"shutdown_timeout_seconds"`
 	AllowedOrigins         []string `yaml:"allowed_origins"`
 	StatsIdentity          string   `yaml:"stats_identity"`
@@ -125,6 +126,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Server.MaxMessageSizeBytes == 0 {
 		cfg.Server.MaxMessageSizeBytes = 4096
+	}
+	if cfg.Server.ClientBufferSize == 0 {
+		cfg.Server.ClientBufferSize = 64
 	}
 	if cfg.Server.ShutdownTimeoutSeconds == 0 {
 		cfg.Server.ShutdownTimeoutSeconds = 10

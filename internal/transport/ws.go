@@ -76,7 +76,7 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(int64(ws.cfg.Server.MaxMessageSizeBytes))
 
 	// Register the client.
-	client := hub.NewClient(claims.Identity, "websocket", claims, refreshToken)
+	client := ws.hub.NewClient(claims.Identity, "websocket", claims, refreshToken)
 	if err := ws.hub.Register(client); err != nil {
 		ws.logger.Warn("WebSocket registration denied", "identity", claims.Identity, "error", err)
 		conn.WriteJSON(map[string]string{"error": "too many connections"})

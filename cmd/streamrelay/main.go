@@ -61,6 +61,7 @@ func main() {
 	h := hub.New(
 		cfg.Server.MaxConnectionsPerIdent,
 		cfg.Server.MaxConnectionsTotal,
+		cfg.Server.ClientBufferSize,
 		logger,
 	)
 

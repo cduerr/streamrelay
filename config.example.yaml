@@ -14,6 +14,10 @@ server:
   max_connections_per_identity: 5
   # Maximum inbound WebSocket message size in bytes.
   max_message_size_bytes: 4096
+  # Per-client send buffer size (number of messages). Clients that fall
+  # behind by more than this many messages are disconnected (slow consumer
+  # protection). Increase for bursty, high-throughput streams.
+  # client_buffer_size: 64
   # Graceful shutdown timeout in seconds.
   shutdown_timeout_seconds: 10
   # Allowed origins for CORS and WebSocket upgrade.

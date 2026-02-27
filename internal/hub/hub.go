@@ -29,14 +29,15 @@ type Client struct {
 }
 
 // NewClient creates a new Client with a buffered send channel.
-func NewClient(identity, transport string, claims *auth.Claims, refreshToken string) *Client {
+// The buffer size is determined by the Hub's configured clientBufferSize.
+func (h *Hub) NewClient(identity, transport string, claims *auth.Claims, refreshToken string) *Client {
 	return &Client{
 		ID:          fmt.Sprintf("%s-%s-%d", identity, transport, time.Now().UnixNano()),
 		Identity:    identity,
 		claims:      claims,
 		RefreshTok:  refreshToken,
 		Transport:   transport,
-		Send:        make(chan []byte, 64),
+		Send:        make(chan []byte, h.clientBufferSize),
 		ConnectedAt: time.Now(),
 		done:        make(chan struct{}),
 	}
@@ -77,18 +78,20 @@ type Hub struct {
 	clients          map[string]map[*Client]struct{} // identity -> set of clients
 	maxPerIdentity   int
 	maxTotal         int
+	clientBufferSize int
 	totalConnections int
 
 	logger *slog.Logger
 }
 
-// New creates a Hub with the given connection limits.
-func New(maxPerIdentity, maxTotal int, logger *slog.Logger) *Hub {
+// New creates a Hub with the given connection limits and client buffer size.
+func New(maxPerIdentity, maxTotal, clientBufferSize int, logger *slog.Logger) *Hub {
 	return &Hub{
-		clients:        make(map[string]map[*Client]struct{}),
-		maxPerIdentity: maxPerIdentity,
-		maxTotal:       maxTotal,
-		logger:         logger,
+		clients:          make(map[string]map[*Client]struct{}),
+		maxPerIdentity:   maxPerIdentity,
+		maxTotal:         maxTotal,
+		clientBufferSize: clientBufferSize,
+		logger:           logger,
 	}
 }
 

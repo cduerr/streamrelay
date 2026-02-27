@@ -51,7 +51,7 @@ func (s *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register the client.
-	client := hub.NewClient(claims.Identity, "sse", claims, refreshToken)
+	client := s.hub.NewClient(claims.Identity, "sse", claims, refreshToken)
 	if err := s.hub.Register(client); err != nil {
 		s.logger.Warn("SSE registration denied", "identity", claims.Identity, "error", err)
 		http.Error(w, `{"error":"too many connections"}`, http.StatusTooManyRequests)
