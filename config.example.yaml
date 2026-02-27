@@ -135,7 +135,7 @@ transports:
   # to Redis at {inbound_prefix}:{identity}. Set to "" to disable inbound.
   # NOTE: Consumers of inbound channels must treat all data as untrusted
   # user input. StreamRelay relays messages without validation.
-  inbound_prefix: "inbound"
+  # inbound_prefix: "inbound"
 
 logging:
   # Log level: debug, info, warn, error

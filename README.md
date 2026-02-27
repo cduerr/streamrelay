@@ -1,18 +1,31 @@
 # StreamRelay
 
-A generic, scalable JWT-authenticated Redis-to-SSE/WebSocket relay. 
-One persistent connection per client. 
+Scalable JWT-authenticated Redis-to-SSE/WebSocket relay.
 
-StreamRelay doesn't know anything about your application. 
-It validates JWTs, extracts an identity, subscribes to a Redis 
-channel for that identity, and relays messages. Your backend 
-publishes, your frontend receives. StreamRelay is just plumbing.
+StreamRelay decouples the real-time small message transport from your business logic so any service on your backend may instantly reach a user's browser or device:
+
+`[Client] ←― WS/SSE ―→ [StreamRelay] ←→ [Redis] ←→ [Your Backend]`
+
+StreamRelay is intended for real-time use cases, including:
+- Notifications
+- Chat & LLM Token Streaming
+- Progress updates
+- Charting
+- Location tracking
+- IoT sensor data
+- Collaborative cursors
+
+StreamRelay accepts persistent SSE and WebSocket connections, authenticates clients via JWT, and delivers messages published to Redis in real time to the right recipient. Your backend publishes to a Redis channel keyed by user identity, StreamRelay routes it to that user's connected devices. 
+
+StreamRelay is agnostic to your application, it's just plumbing.
 
 ## Disclaimer
 
 Not peer-reviewed. Not tested at scale. Use at your own risk.
 
 ## Architecture
+
+(see [TODO] for planned updates to support more connections in scaled use cases)
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -444,6 +457,8 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 
 ## TODO
 
+### General
+
 - [ ] Per-identity stats endpoint (`GET /stats/identity/{id}`) — local only, no Redis
 - [ ] Bulk identity stats endpoint (`GET /stats/identities`) — local counts for monitoring
 - [ ] Dropped message atomic counter (replace per-drop warn log which will kill throughput at scale)
@@ -459,6 +474,19 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 - [ ] Remove `max_connections_per_identity` — policy belongs in application layer, not plumbing
 - [ ] Unit tests
 - [ ] Security audit
+
+### High Volume Scaling
+
+- [ ] Direct subscription mode (`subscription_mode: "direct"`) as alternative to current broadcast mode:
+  - Per-identity `SUBSCRIBE`/`UNSUBSCRIBE` tied to client connect/disconnect lifecycle
+    - Detect if using redis cluster, use SSUBSCRIBE/SUNSUBSCRIBE if available.
+  - Refcount per identity so unsubscribe only fires when last client for that identity disconnects
+  - Hub notifies broker on register/unregister events
+  - Startup reconciliation: subscribe to all identities currently held on boot
+  - Background reconciliation goroutine (every 30-60s): compare active Redis subscriptions against hub connection map, clean up stale subscriptions (and generally handle stale redis refs/keys)
+  - Graceful handling of race between hub registration and Redis subscribe completing (brief window where messages could be missed)
+  - Mass reconnect resilience: deploys and network blips will trigger subscribe/unsubscribe storms
+- [ ] Maintain current broadcast mode (`subscription_mode: "broadcast"`) as default — simpler, no coordination, correct for single-instance and small fleet deployments
 
 ## License
 
