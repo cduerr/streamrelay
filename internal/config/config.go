@@ -37,7 +37,9 @@ type ServerConfig struct {
 	MaxMessageSizeBytes    int      `yaml:"max_message_size_bytes"`
 	ClientBufferSize       int      `yaml:"client_buffer_size"`
 	SlowConsumerPolicy     string   `yaml:"slow_consumer_policy"`
-	ShutdownTimeoutSeconds int      `yaml:"shutdown_timeout_seconds"`
+	WebSocketPingSeconds    int      `yaml:"websocket_ping_seconds"`
+	WebSocketWriteTimeoutMs int     `yaml:"websocket_write_timeout_ms"`
+	ShutdownTimeoutSeconds  int     `yaml:"shutdown_timeout_seconds"`
 	AllowedOrigins         []string `yaml:"allowed_origins"`
 	StatsIdentity          string   `yaml:"stats_identity"`
 }
@@ -133,6 +135,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Server.SlowConsumerPolicy == "" {
 		cfg.Server.SlowConsumerPolicy = "drop_newest_message"
+	}
+	if cfg.Server.WebSocketPingSeconds == 0 {
+		cfg.Server.WebSocketPingSeconds = 30
+	}
+	if cfg.Server.WebSocketWriteTimeoutMs == 0 {
+		cfg.Server.WebSocketWriteTimeoutMs = 10000
 	}
 	if cfg.Server.ShutdownTimeoutSeconds == 0 {
 		cfg.Server.ShutdownTimeoutSeconds = 10

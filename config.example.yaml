@@ -22,6 +22,12 @@ server:
   #   drop_newest_message - discard the message for that client, keep connected (default)
   #   drop_client         - disconnect the slow client
   # slow_consumer_policy: "drop_newest_message"
+  # Seconds between WebSocket ping frames. Connections that miss two
+  # consecutive pongs are considered dead and closed.
+  # websocket_ping_seconds: 30
+  # Maximum time in milliseconds to wait for a WebSocket write (message
+  # or ping) to complete before closing the connection.
+  # websocket_write_timeout_ms: 10000
   # Graceful shutdown timeout in seconds.
   shutdown_timeout_seconds: 10
   # Allowed origins for CORS and WebSocket upgrade.

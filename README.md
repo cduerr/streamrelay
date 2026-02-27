@@ -8,6 +8,10 @@ It validates JWTs, extracts an identity, subscribes to a Redis
 channel for that identity, and relays messages. Your backend 
 publishes, your frontend receives. StreamRelay is just plumbing.
 
+## Disclaimer
+
+Not peer-reviewed. Not tested at scale. Use at your own risk.
+
 ## Architecture
 
 ```
@@ -163,6 +167,8 @@ StreamRelay is configured via a YAML file (default: `config.yaml`). Secrets can 
 | `max_message_size_bytes` | `4096` | Max inbound WebSocket message size |
 | `client_buffer_size` | `64` | Per-client send buffer (number of messages). When full, `slow_consumer_policy` determines behavior. |
 | `slow_consumer_policy` | `drop_newest_message` | What happens when a client's buffer is full: `drop_newest_message` discards the message silently; `drop_client` disconnects the slow client. |
+| `websocket_ping_seconds` | `30` | Seconds between WebSocket ping frames. Dead connections are detected after two missed pongs. |
+| `websocket_write_timeout_ms` | `10000` | Max time in milliseconds for a WebSocket write to complete before the connection is closed. |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout |
 | `allowed_origins` | `[]` | CORS allowed origins. Empty rejects all cross-origin requests. Use `["*"]` to allow all (not recommended). |
 | `stats_identity` | — | If set, only this identity can access `/stats`. When empty, any authenticated user can access it. |
@@ -392,7 +398,7 @@ function App() {
         // Update library card progress ring.
         break;
       case 'chat_token':
-        // Append token to Explorer chat.
+        // Append token to chat box
         break;
       case 'notification':
         // Show toast notification.
@@ -431,8 +437,11 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 
 ## TODO
 
-[ ] Max connection tracking should be global, not per-instance
-[ ] Prometheus metrics endpoint (global stats)
+- [ ] Max connection tracking should be global, not per-instance
+- [ ] Prometheus metrics endpoint (global stats)
+- [ ] Unit tests
+- [ ] Dropped message counter
+- [ ] Security audit
 
 ## License
 

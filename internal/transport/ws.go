@@ -110,9 +110,10 @@ func (ws *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (ws *WSHandler) readPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *hub.Client) {
 	defer cancel()
 
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	pongWait := time.Duration(ws.cfg.Server.WebSocketPingSeconds*2) * time.Second
+	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -152,7 +153,9 @@ func (ws *WSHandler) readPump(ctx context.Context, cancel context.CancelFunc, co
 
 // writePump writes messages from the hub to the WebSocket connection.
 func (ws *WSHandler) writePump(ctx context.Context, conn *websocket.Conn, client *hub.Client) {
-	pingTicker := time.NewTicker(30 * time.Second)
+	pingInterval := time.Duration(ws.cfg.Server.WebSocketPingSeconds) * time.Second
+	writeTimeout := time.Duration(ws.cfg.Server.WebSocketWriteTimeoutMs) * time.Millisecond
+	pingTicker := time.NewTicker(pingInterval)
 	defer pingTicker.Stop()
 
 	for {
@@ -174,7 +177,7 @@ func (ws *WSHandler) writePump(ctx context.Context, conn *websocket.Conn, client
 				return
 			}
 
-			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 
 			// For WebSocket, send as text (not SSE formatted).
 			payload := stripSSEFraming(msg)
@@ -184,7 +187,7 @@ func (ws *WSHandler) writePump(ctx context.Context, conn *websocket.Conn, client
 			}
 
 		case <-pingTicker.C:
-			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
