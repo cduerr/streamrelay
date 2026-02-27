@@ -444,10 +444,20 @@ pub.send("42", "chat_token", {"conversation_id": 456, "token": "Bonjour"})
 
 ## TODO
 
-- [ ] Max connection tracking should be global, not per-instance
-- [ ] Prometheus metrics endpoint (global stats)
+- [ ] Per-identity stats endpoint (`GET /stats/identity/{id}`) — local only, no Redis
+- [ ] Bulk identity stats endpoint (`GET /stats/identities`) — local counts for monitoring
+- [ ] Dropped message atomic counter (replace per-drop warn log which will kill throughput at scale)
+- [ ] Unified metrics collector with two presentation layers:
+  - `GET /stats` — JSON for humans/scripts
+  - `GET /metrics` — Prometheus exposition format
+  - Tracked metrics:
+    - Connection count
+    - Identity count
+    - Messages relayed (count)
+    - Messages dropped (count)
+    - Uptime
+- [ ] Remove `max_connections_per_identity` — policy belongs in application layer, not plumbing
 - [ ] Unit tests
-- [ ] Dropped message counter
 - [ ] Security audit
 
 ## License
